@@ -1,0 +1,20 @@
+{
+  "cmd": "train",
+  "name": "ttur",
+  "loss": "bce",
+  "sn": false,
+  "mbstd": false,
+  "inst_noise": 0.0,
+  "lrD": 5e-05,
+  "epochs": 15,
+  "batch": 64,
+  "lr": 0.0002,
+  "ckpt_every": 5,
+  "snap_epochs": [
+    1,
+    2,
+    5,
+    10,
+    15
+  ]
+}

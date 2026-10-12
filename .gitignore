@@ -1,0 +1,9 @@
+.venv/
+data/
+__pycache__/
+.DS_Store
+.ipynb_checkpoints/
+runs/*.log
+# checkpoints pesados: solo se versiona G_epoch_010.pt (punto de comparación de los experimentos)
+runs/*/ckpt/*
+!runs/*/ckpt/G_epoch_010.pt

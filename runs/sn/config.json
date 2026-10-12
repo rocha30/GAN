@@ -1,0 +1,22 @@
+{
+  "cmd": "train",
+  "name": "sn",
+  "loss": "bce",
+  "sn": true,
+  "epochs": 30,
+  "batch": 64,
+  "lr": 0.0002,
+  "ckpt_every": 5,
+  "snap_epochs": [
+    1,
+    2,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30
+  ],
+  "epochs_completadas": 10,
+  "nota": "detenida en la \u00e9poca 10 por c\u00f3mputo/tiempo; colapso de modos visible desde la \u00e9poca 5"
+}

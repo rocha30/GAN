@@ -1,0 +1,25 @@
+{
+  "cmd": "train",
+  "name": "mbstd",
+  "loss": "bce",
+  "sn": false,
+  "mbstd": true,
+  "epochs": 40,
+  "batch": 64,
+  "lr": 0.0002,
+  "ckpt_every": 5,
+  "snap_epochs": [
+    1,
+    2,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40
+  ],
+  "epochs_completadas": 20,
+  "nota": "entrenada 10 \u00e9pocas (comparaci\u00f3n) y continuada hasta la 20; detenida por colapso persistente y tiempo"
+}
