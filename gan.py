@@ -9,6 +9,8 @@ Un solo script configurable para que los experimentos cambien UNA cosa a la vez:
   --mbstd       capa minibatch-std en D (anti colapso)   [experimento de estabilización 2]
   --inst_noise  ruido gaussiano en entradas de D         [experimento de estabilización 3]
   --lrD         lr distinta para D (TTUR)                [experimento de estabilización 4]
+  --dbias       sesgos en las convoluciones de D         [diagnóstico del colapso, parte 2]
+  --loss wgangp WGAN-GP: crítico sin normalización, con sesgos, penalización de gradiente, n_critic pasos de D por paso de G
 
 Todo lo demás (datos, semilla, épocas, lr, ruido de evaluación) es idéntico entre corridas.
 
@@ -119,19 +121,24 @@ class MinibatchStd(nn.Module):
 class Discriminator(nn.Module):
     """DCGAN: 64x64x3 -> 1 logit.
     --sn     reemplaza BatchNorm por normalización espectral en todas las convoluciones.
-    --mbstd  agrega una capa minibatch-std antes de la última convolución."""
+    --mbstd  agrega una capa minibatch-std antes de la última convolución.
+    bias     sesgos en las convoluciones. Sin BatchNorm y sin sesgos (como en la corrida `sn` de la parte 1), D es una
+             función lineal a trozos homogénea, D(c·x) = c·D(x): una imagen gris (≈ 0 en [-1, 1]) recibe logit ≈ 0 y
+             casi ningún gradiente, y G se queda atrapado allí (ver el diagnóstico en el notebook).
+    nonorm   sin BatchNorm ni SN (crítico de WGAN-GP: la penalización de gradiente no es compatible con BatchNorm)."""
 
-    def __init__(self, ndf=64, sn=False, mbstd=False):
+    def __init__(self, ndf=64, sn=False, mbstd=False, bias=False, nonorm=False):
         super().__init__()
         SN = nn.utils.spectral_norm if sn else (lambda m: m)
-        norm = (lambda c: nn.Identity()) if sn else nn.BatchNorm2d
+        norm = (lambda c: nn.Identity()) if (sn or nonorm) else nn.BatchNorm2d
+        b = bias
         self.net = nn.Sequential(
-            SN(nn.Conv2d(3, ndf, 4, 2, 1, bias=False)), nn.LeakyReLU(0.2, True),
-            SN(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)), norm(ndf * 2), nn.LeakyReLU(0.2, True),
-            SN(nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)), norm(ndf * 4), nn.LeakyReLU(0.2, True),
-            SN(nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False)), norm(ndf * 8), nn.LeakyReLU(0.2, True),
+            SN(nn.Conv2d(3, ndf, 4, 2, 1, bias=b)), nn.LeakyReLU(0.2, True),
+            SN(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=b)), norm(ndf * 2), nn.LeakyReLU(0.2, True),
+            SN(nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=b)), norm(ndf * 4), nn.LeakyReLU(0.2, True),
+            SN(nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=b)), norm(ndf * 8), nn.LeakyReLU(0.2, True),
             MinibatchStd() if mbstd else nn.Identity(),
-            SN(nn.Conv2d(ndf * 8 + int(mbstd), 1, 4, 1, 0, bias=False)),
+            SN(nn.Conv2d(ndf * 8 + int(mbstd), 1, 4, 1, 0, bias=b)),
         )
 
     def forward(self, x):
@@ -143,6 +150,8 @@ def weights_init(m):
     if "Conv" in name:
         w = m.weight_orig if hasattr(m, "weight_orig") else m.weight
         nn.init.normal_(w, 0.0, 0.02)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
     elif "BatchNorm" in name:
         nn.init.normal_(m.weight, 1.0, 0.02)
         nn.init.zeros_(m.bias)
@@ -155,13 +164,23 @@ def d_loss_fn(kind, real_logits, fake_logits):
                 + F.binary_cross_entropy_with_logits(fake_logits, torch.zeros_like(fake_logits)))
     if kind == "hinge":
         return F.relu(1.0 - real_logits).mean() + F.relu(1.0 + fake_logits).mean()
+    if kind == "wgangp":  # distancia de Wasserstein estimada (la penalización de gradiente se suma en train)
+        return fake_logits.mean() - real_logits.mean()
     raise ValueError(kind)
+
+
+def gradient_penalty(D, real, fake):
+    """WGAN-GP (Gulrajani et al., 2017): (||grad D(x_hat)|| - 1)^2 en puntos interpolados entre reales y falsos."""
+    e = torch.rand(real.size(0), 1, 1, 1, device=real.device)
+    x = (e * real + (1 - e) * fake).requires_grad_(True)
+    g, = torch.autograd.grad(D(x).sum(), x, create_graph=True)
+    return ((g.flatten(1).norm(dim=1) - 1) ** 2).mean()
 
 
 def g_loss_fn(kind, fake_logits):
     if kind == "bce":  # no saturante: max log D(G(z))
         return F.binary_cross_entropy_with_logits(fake_logits, torch.ones_like(fake_logits))
-    if kind == "hinge":
+    if kind in ("hinge", "wgangp"):
         return -fake_logits.mean()
     raise ValueError(kind)
 
@@ -195,7 +214,9 @@ def save_grid(x, path, nrow=8, pad=2):
 
 
 def load_generator(run_dir, device="cpu", ckpt="G_final.pt"):
-    G = Generator().to(device)
+    cfg = Path(run_dir) / "config.json"
+    ngf = json.load(open(cfg)).get("ngf", 64) if cfg.exists() else 64
+    G = Generator(ngf=ngf).to(device)
     G.load_state_dict(torch.load(Path(run_dir) / ckpt, map_location=device))
     G.eval()
     return G
@@ -213,12 +234,14 @@ def train(args):
     ds = TinyHero(augment=True)
     dl = DataLoader(ds, batch_size=args.batch, shuffle=True, drop_last=True,
                     generator=torch.Generator().manual_seed(SEED))
-    G = Generator().to(device)
-    D = Discriminator(sn=args.sn, mbstd=args.mbstd).to(device)
+    wgan = args.loss == "wgangp"
+    G = Generator(ngf=args.ngf).to(device)
+    D = Discriminator(ndf=args.ndf, sn=args.sn, mbstd=args.mbstd, bias=args.dbias or wgan, nonorm=wgan).to(device)
     G.apply(weights_init)
     D.apply(weights_init)
-    optG = torch.optim.Adam(G.parameters(), lr=args.lr, betas=(0.5, 0.999))
-    optD = torch.optim.Adam(D.parameters(), lr=args.lrD or args.lr, betas=(0.5, 0.999))
+    betas = (args.beta1, args.beta2)
+    optG = torch.optim.Adam(G.parameters(), lr=args.lr, betas=betas)
+    optD = torch.optim.Adam(D.parameters(), lr=args.lrD or args.lr, betas=betas)
     zfix = fixed_noise(16, device)
 
     log = {"iter": [], "epoch": [], "lossD": [], "lossG": [], "D_real": [], "D_fake": []}
@@ -234,7 +257,7 @@ def train(args):
     with torch.no_grad():
         G.eval(); save_grid(G(zfix), out / "fixed" / "epoch_000.png", nrow=8); G.train()
 
-    it = len(log["iter"])
+    it = log["iter"][-1] + 1 if log["iter"] else 0   # contador de pasos de D (en WGAN-GP hay n_critic por paso de G)
     t0 = time.time()
     for epoch in range(start_epoch, args.epochs):
         for real in dl:
@@ -248,8 +271,13 @@ def train(args):
             nz_ = (lambda t: t + sigma * torch.randn_like(t)) if sigma > 0 else (lambda t: t)
             rl, fl = D(nz_(real)), D(nz_(fake.detach()))
             lossD = d_loss_fn(args.loss, rl, fl)
+            if wgan:
+                lossD = lossD + args.gp * gradient_penalty(D, real, fake.detach())
             optD.zero_grad(set_to_none=True); lossD.backward(); optD.step()
-            # --- G
+            # --- G (en WGAN-GP, un paso de G cada n_critic pasos de D)
+            if wgan and (it + 1) % args.n_critic:
+                it += 1
+                continue
             fl2 = D(nz_(fake))
             lossG = g_loss_fn(args.loss, fl2)
             optG.zero_grad(set_to_none=True); lossG.backward(); optG.step()
@@ -258,6 +286,8 @@ def train(args):
             log["lossD"].append(lossD.item()); log["lossG"].append(lossG.item())
             log["D_real"].append(torch.sigmoid(rl).mean().item())
             log["D_fake"].append(torch.sigmoid(fl).mean().item())
+            log.setdefault("C_real", []).append(rl.mean().item())   # logits / valores del crítico sin sigmoide
+            log.setdefault("C_fake", []).append(fl.mean().item())
             it += 1
         ep = epoch + 1
         if ep in args.snap_epochs or ep == args.epochs:
@@ -282,7 +312,12 @@ if __name__ == "__main__":
     sub = p.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("train")
     t.add_argument("--name", required=True)
-    t.add_argument("--loss", choices=["bce", "hinge"], default="bce")
+    t.add_argument("--loss", choices=["bce", "hinge", "wgangp"], default="bce")
+    t.add_argument("--n_critic", type=int, default=5, help="WGAN-GP: pasos de D por paso de G")
+    t.add_argument("--gp", type=float, default=10.0, help="WGAN-GP: peso de la penalización de gradiente")
+    t.add_argument("--dbias", action="store_true", help="sesgos en las convoluciones de D")
+    t.add_argument("--ngf", type=int, default=64)
+    t.add_argument("--ndf", type=int, default=64)
     t.add_argument("--sn", action="store_true")
     t.add_argument("--mbstd", action="store_true")
     t.add_argument("--inst_noise", type=float, default=0.0, help="sigma inicial del ruido en entradas de D")
@@ -290,6 +325,8 @@ if __name__ == "__main__":
     t.add_argument("--epochs", type=int, default=60)
     t.add_argument("--batch", type=int, default=64)
     t.add_argument("--lr", type=float, default=2e-4)
+    t.add_argument("--beta1", type=float, default=0.5, help="Adam beta1 (DCGAN: 0.5; SNGAN/SAGAN: 0.0)")
+    t.add_argument("--beta2", type=float, default=0.999, help="Adam beta2 (DCGAN: 0.999; SNGAN/SAGAN: 0.9)")
     t.add_argument("--ckpt_every", type=int, default=10)
     t.add_argument("--snap_epochs", type=int, nargs="*", default=[1, 2, 5, 10, 20, 30, 40, 50, 60, 80, 100])
     a = p.parse_args()

@@ -1,0 +1,26 @@
+{
+  "cmd": "train",
+  "name": "sn_bias",
+  "loss": "bce",
+  "n_critic": 5,
+  "gp": 10.0,
+  "dbias": true,
+  "ngf": 64,
+  "ndf": 64,
+  "sn": true,
+  "mbstd": false,
+  "inst_noise": 0.0,
+  "lrD": null,
+  "epochs": 10,
+  "batch": 64,
+  "lr": 0.0002,
+  "beta1": 0.5,
+  "beta2": 0.999,
+  "ckpt_every": 5,
+  "snap_epochs": [
+    1,
+    2,
+    5,
+    10
+  ]
+}

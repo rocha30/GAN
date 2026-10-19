@@ -20,13 +20,15 @@ from PIL import Image
 from gan import NZ, ROOT, RUNS_DIR, TinyHero, load_generator, to_uint8
 
 FIG = ROOT / "figuras"
-RUNS = ["base", "hinge", "sn", "mbstd", "noise", "ttur"]   # todas comparadas en la época 10
+RUNS = ["base", "hinge", "sn", "mbstd", "noise", "ttur", "sn_bias"]   # todas comparadas en la época 10
 LABEL = {"base": "Base: DCGAN + BCE no saturante",
          "hinge": "Exp. pérdida: hinge",
          "sn": "Exp. estabilización 1: spectral norm en D",
          "mbstd": "Exp. estabilización 2: minibatch-std en D",
          "noise": "Exp. estabilización 3: ruido en entradas de D",
-         "ttur": "Exp. estabilización 4: lr de D = lr de G / 4"}
+         "ttur": "Exp. estabilización 4: lr de D = lr de G / 4",
+         "sn_bias": "Diagnóstico: spectral norm + sesgos en D",
+         "wgangp": "Modelo final: WGAN-GP"}
 CMP_CKPT = "ckpt/G_epoch_010.pt"   # punto de comparación común (mismas iteraciones para todos)
 
 
@@ -69,6 +71,37 @@ def mean_pairwise(f):
     return float((1 - (sim.sum() - n) / (n * (n - 1))).item())
 
 
+def background_and_spread(x):
+    """Fondo medio (borde de 4 px; en los datos reales es 1.0 = blanco) y desviación estándar por píxel entre muestras."""
+    border = torch.ones(64, 64, dtype=torch.bool)
+    border[4:-4, 4:-4] = False
+    return float(x[:, :, border].mean()), float(x.std(0).mean())
+
+
+def homogeneity_check(seed=0):
+    """D sin BatchNorm y sin sesgos (conv + LeakyReLU) es positivamente homogénea: D(c·x) = c·D(x) para c > 0.
+    Se comprueba numéricamente con pesos aleatorios: con sesgos, la relación deja de cumplirse."""
+    from gan import Discriminator
+    torch.manual_seed(seed)
+    x = torch.randn(8, 3, 64, 64) * 0.5
+    out = {}
+    for bias in (False, True):
+        D = Discriminator(sn=True, bias=bias)
+        with torch.no_grad():
+            if bias:
+                for m in D.modules():
+                    if isinstance(m, torch.nn.Conv2d):
+                        torch.nn.init.uniform_(m.bias, -0.1, 0.1)
+            for _ in range(30):   # converge la iteración de potencia de la normalización espectral
+                D(x)
+            D.eval()
+            d1, d2, d0 = D(x), D(0.25 * x), D(torch.zeros(1, 3, 64, 64))
+        out["con_sesgos" if bias else "sin_sesgos"] = {"D(x)": round(float(d1.mean()), 4), "D(0.25x)": round(float(d2.mean()), 4),
+                                                        "D(0.25x)/D(x)": round(float((d2 / d1).mean()), 4),
+                                                        "D(0)": round(float(d0), 4)}
+    return out
+
+
 def generate(G, n, seed=123):
     g = torch.Generator().manual_seed(seed)
     z = torch.randn(n, NZ, generator=g)
@@ -89,7 +122,7 @@ def figures(final=None):
     logs = {r: json.load(open(RUNS_DIR / r / "log.json")) for r in RUNS}
 
     # 1) curvas de pérdida y salidas de D (una columna por corrida)
-    fig, axes = plt.subplots(2, len(RUNS), figsize=(4.4 * len(RUNS), 7), sharex=False)
+    fig, axes = plt.subplots(2, len(RUNS), figsize=(4.0 * len(RUNS), 7), sharex=False)
     for j, r in enumerate(RUNS):
         L = logs[r]
         ax = axes[0, j]
@@ -102,8 +135,25 @@ def figures(final=None):
     axes[0, 0].set_ylabel("pérdida"); axes[1, 0].set_ylabel("sigmoid(logit) medio")
     fig.tight_layout(); fig.savefig(FIG / "curvas_perdida.png", dpi=130); plt.close(fig)
 
+    # 1b) curvas de los modelos finales WGAN-GP: el crítico no tiene sigmoide, se grafica la distancia de Wasserstein estimada
+    for r in [f for f in final if json.load(open(RUNS_DIR / f / "config.json"))["loss"] == "wgangp"]:
+        L = json.load(open(RUNS_DIR / r / "log.json"))
+        logs[r] = L
+        w = np.asarray(L["C_real"]) - np.asarray(L["C_fake"])
+        fig, axes = plt.subplots(1, 2, figsize=(13, 4.2))
+        ax = axes[0]
+        ax.plot(L["lossD"], alpha=0.15, color="C0"); ax.plot(smooth(L["lossD"]), color="C0", label="pérdida del crítico (−W + 10·GP)")
+        ax.plot(L["lossG"], alpha=0.15, color="C3"); ax.plot(smooth(L["lossG"]), color="C3", label="pérdida de G (−C(G(z)))")
+        ax.axhline(0, color="k", lw=0.6); ax.set_xlabel("paso de G"); ax.legend(); ax.grid(alpha=0.3)
+        ax.set_title(f"{LABEL[r]}: pérdidas", fontsize=10)
+        ax = axes[1]
+        ax.plot(w, alpha=0.15, color="C2"); ax.plot(smooth(w), color="C2", label="W estimada = C(x) − C(G(z))")
+        ax.set_xlabel("paso de G"); ax.legend(); ax.grid(alpha=0.3)
+        ax.set_title("Distancia de Wasserstein estimada (debe bajar si G se acerca a los datos)", fontsize=10)
+        fig.tight_layout(); fig.savefig(FIG / f"curvas_{r}.png", dpi=130); plt.close(fig)
+
     # 2) rejilla de ruido fijo: filas = época, columnas = los 16 mismos z
-    for r in RUNS:
+    for r in RUNS + [f for f in final if f not in RUNS]:
         snaps = sorted((RUNS_DIR / r / "fixed").glob("epoch_*.png"))
         rows = []
         for s in snaps:
@@ -123,15 +173,21 @@ def figures(final=None):
     # 3) métricas: FID con features de ResNet18 (no comparable con el FID estándar) y diversidad
     real = TinyHero(augment=False).x
     f_real = cnn_features(real)
-    metrics = {"real": {"diversidad": mean_pairwise(f_real[torch.randperm(len(f_real), generator=torch.Generator().manual_seed(0))[:1000]])}}
-    for r in RUNS + ([final + "_final"] if final else []):
+    sub = torch.randperm(len(f_real), generator=torch.Generator().manual_seed(0))[:1000]
+    bg, sp = background_and_spread(real[sub])
+    metrics = {"real": {"diversidad": mean_pairwise(f_real[sub]), "fondo_medio": bg, "desv_entre_muestras": sp},
+               "homogeneidad_D": homogeneity_check()}
+    for r in RUNS + [f + "_final" for f in final]:
         G = load_generator(RUNS_DIR / r.replace("_final", ""), ckpt="G_final.pt" if r.endswith("_final") else CMP_CKPT)
         fake = generate(G, 1000)
         f_fake = cnn_features(fake)
-        metrics[r] = {"fid_resnet18": frechet(f_real, f_fake), "diversidad": mean_pairwise(f_fake)}
+        bg, sp = background_and_spread(fake)
+        metrics[r] = {"fid_resnet18": frechet(f_real, f_fake), "diversidad": mean_pairwise(f_fake),
+                      "fondo_medio": bg, "desv_entre_muestras": sp}
         # D colapsado a cero durante muchas épocas -> alarma
         L = logs[r.replace("_final", "")]
-        metrics[r]["frac_iters_lossD_lt_0.05"] = float(np.mean(np.asarray(L["lossD"]) < 0.05))
+        metrics[r]["frac_iters_lossD_lt_0.05"] = (None if "wgangp" in r  # en WGAN-GP la pérdida del crítico es negativa por diseño
+                                                  else float(np.mean(np.asarray(L["lossD"]) < 0.05)))
         save_samples = to_uint8(fake[:64])
         grid = np.concatenate([np.concatenate(list(save_samples[i * 8:(i + 1) * 8]), 1) for i in range(8)], 0)
         Image.fromarray(grid).resize((grid.shape[1] * 2, grid.shape[0] * 2), Image.NEAREST).save(FIG / f"muestras_{r}.png")
@@ -147,6 +203,6 @@ def figures(final=None):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("cmd", choices=["figures"])
-    p.add_argument("--final", default=None, help="corrida del modelo final (se evalúa también con G_final.pt)")
+    p.add_argument("--final", nargs="*", default=[], help="corridas evaluadas también con G_final.pt (p. ej. ttur wgangp)")
     a = p.parse_args()
     figures(a.final)

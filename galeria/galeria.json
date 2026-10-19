@@ -1,0 +1,233 @@
+{
+  "modelo": "runs/wgangp/G_final.pt",
+  "nz": 100,
+  "generacion": "z = torch.randn(1, 100, generator=torch.Generator().manual_seed(semilla)); G.eval(); un forward por personaje",
+  "n_candidatos": 200,
+  "semillas_candidatos": "0..199",
+  "tasa_seleccion": "10 de 200 (5 %)",
+  "criterio": "Revisamos a ojo los 200 candidatos (figuras/candidatos.png). Requisitos: (1) silueta humanoide legible (cabeza, torso, brazos y piernas) y (2) sin artefactos graves (manchas sueltas, cuerpo deshecho). Entre los que cumplen, elegimos 10 que (3) no se parezcan entre sí en color de cabello, vista (frente, espalda, perfil) ni ropa. La sugerencia automática greedy max-min de `galeria.py candidates` se descartó porque favorecía candidatos atípicos por tener artefactos; la distinción entre los 10 se verificó con el coseno ResNet18 entre pares (diversidad_galeria).",
+  "metodo_vecinos": "Búsqueda en los 3648 datos de entrenamiento y sus 3648 versiones volteadas horizontalmente (el entrenamiento usó volteo). CNN: features de ResNet18 (ImageNet) normalizadas L2, coseno = producto punto, vecino = argmax. Píxeles: distancia L2 en [-1, 1] sobre 3x64x64, vecino = argmin. Referencia: para cada imagen real, su vecina real más cercana excluyéndose a sí misma y a su volteada.",
+  "referencia_real_nn_cos": {
+    "media": 0.9522,
+    "mediana": 0.9462,
+    "p5": 0.8852,
+    "p95": 1.0,
+    "min": 0.7822,
+    "max": 1.0
+  },
+  "referencia_real_nn_l2": {
+    "media": 14.626,
+    "mediana": 17.1963,
+    "p5": 0.0,
+    "p95": 32.7734,
+    "min": 0.0,
+    "max": 49.5512
+  },
+  "diversidad_galeria": {
+    "1_menos_coseno_medio_entre_pares": 0.2366,
+    "coseno_max_entre_dos_personajes": 0.8965,
+    "referencia_reales_1_menos_coseno_medio": 0.2743
+  },
+  "personajes": [
+    {
+      "n": 1,
+      "semilla": 60,
+      "nombre": "Rhosyn de Brasaviva",
+      "clase": "Aprendiz de herrera",
+      "archivos": {
+        "png": "galeria/personaje_01_semilla_60.png",
+        "png_x4": "galeria/personaje_01_semilla_60_x4.png",
+        "z": "galeria/personaje_01_semilla_60_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/2/440.png",
+      "nn_cnn_volteada": false,
+      "nn_cnn_cos": 0.911,
+      "nn_pixel_ruta": "data/tinyhero/data/3/440.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 31.469,
+      "frac_reales_con_vecino_mas_cercano": 0.7947,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.932,
+      "max_cos_con_otro_personaje": 0.8256
+    },
+    {
+      "n": 2,
+      "semilla": 10,
+      "nombre": "Ivra Hojaverde",
+      "clase": "Druida del Bosque Musgoso",
+      "archivos": {
+        "png": "galeria/personaje_02_semilla_10.png",
+        "png_x4": "galeria/personaje_02_semilla_10_x4.png",
+        "z": "galeria/personaje_02_semilla_10_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/0/80.png",
+      "nn_cnn_volteada": true,
+      "nn_cnn_cos": 0.9069,
+      "nn_pixel_ruta": "data/tinyhero/data/2/338.png",
+      "nn_pixel_volteada": true,
+      "nn_pixel_l2": 41.412,
+      "frac_reales_con_vecino_mas_cercano": 0.8306,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.9948,
+      "max_cos_con_otro_personaje": 0.8362
+    },
+    {
+      "n": 3,
+      "semilla": 6,
+      "nombre": "Corvin Sombrafría",
+      "clase": "Explorador nocturno",
+      "archivos": {
+        "png": "galeria/personaje_03_semilla_6.png",
+        "png_x4": "galeria/personaje_03_semilla_6_x4.png",
+        "z": "galeria/personaje_03_semilla_6_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/1/238.png",
+      "nn_cnn_volteada": true,
+      "nn_cnn_cos": 0.8922,
+      "nn_pixel_ruta": "data/tinyhero/data/1/482.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 25.692,
+      "frac_reales_con_vecino_mas_cercano": 0.9205,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.7812,
+      "max_cos_con_otro_personaje": 0.8256
+    },
+    {
+      "n": 4,
+      "semilla": 66,
+      "nombre": "Nerea Mareaclara",
+      "clase": "Maga de las Mareas",
+      "archivos": {
+        "png": "galeria/personaje_04_semilla_66.png",
+        "png_x4": "galeria/personaje_04_semilla_66_x4.png",
+        "z": "galeria/personaje_04_semilla_66_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/2/864.png",
+      "nn_cnn_volteada": true,
+      "nn_cnn_cos": 0.8677,
+      "nn_pixel_ruta": "data/tinyhero/data/3/31.png",
+      "nn_pixel_volteada": true,
+      "nn_pixel_l2": 33.214,
+      "frac_reales_con_vecino_mas_cercano": 0.9775,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.9567,
+      "max_cos_con_otro_personaje": 0.845
+    },
+    {
+      "n": 5,
+      "semilla": 83,
+      "nombre": "Tobin Cardoverde",
+      "clase": "Guardabosques",
+      "archivos": {
+        "png": "galeria/personaje_05_semilla_83.png",
+        "png_x4": "galeria/personaje_05_semilla_83_x4.png",
+        "z": "galeria/personaje_05_semilla_83_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/1/214.png",
+      "nn_cnn_volteada": false,
+      "nn_cnn_cos": 0.8979,
+      "nn_pixel_ruta": "data/tinyhero/data/1/133.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 36.37,
+      "frac_reales_con_vecino_mas_cercano": 0.8879,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.9808,
+      "max_cos_con_otro_personaje": 0.8362
+    },
+    {
+      "n": 6,
+      "semilla": 109,
+      "nombre": "Albarán el Escarchado",
+      "clase": "Vidente de la Escarcha",
+      "archivos": {
+        "png": "galeria/personaje_06_semilla_109.png",
+        "png_x4": "galeria/personaje_06_semilla_109_x4.png",
+        "z": "galeria/personaje_06_semilla_109_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/2/96.png",
+      "nn_cnn_volteada": false,
+      "nn_cnn_cos": 0.8813,
+      "nn_pixel_ruta": "data/tinyhero/data/2/344.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 30.034,
+      "frac_reales_con_vecino_mas_cercano": 0.9613,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.9049,
+      "max_cos_con_otro_personaje": 0.809
+    },
+    {
+      "n": 7,
+      "semilla": 13,
+      "nombre": "Garrik Forjarroja",
+      "clase": "Mercenario",
+      "archivos": {
+        "png": "galeria/personaje_07_semilla_13.png",
+        "png_x4": "galeria/personaje_07_semilla_13_x4.png",
+        "z": "galeria/personaje_07_semilla_13_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/0/18.png",
+      "nn_cnn_volteada": false,
+      "nn_cnn_cos": 0.8755,
+      "nn_pixel_ruta": "data/tinyhero/data/0/549.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 33.232,
+      "frac_reales_con_vecino_mas_cercano": 0.9688,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.957,
+      "max_cos_con_otro_personaje": 0.8965
+    },
+    {
+      "n": 8,
+      "semilla": 168,
+      "nombre": "Lysa Trigodorado",
+      "clase": "Escudera",
+      "archivos": {
+        "png": "galeria/personaje_08_semilla_168.png",
+        "png_x4": "galeria/personaje_08_semilla_168_x4.png",
+        "z": "galeria/personaje_08_semilla_168_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/3/530.png",
+      "nn_cnn_volteada": true,
+      "nn_cnn_cos": 0.8965,
+      "nn_pixel_ruta": "data/tinyhero/data/1/616.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 29.155,
+      "frac_reales_con_vecino_mas_cercano": 0.8975,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.8882,
+      "max_cos_con_otro_personaje": 0.8965
+    },
+    {
+      "n": 9,
+      "semilla": 50,
+      "nombre": "Mirela de Valcastaño",
+      "clase": "Juglaresa",
+      "archivos": {
+        "png": "galeria/personaje_09_semilla_50.png",
+        "png_x4": "galeria/personaje_09_semilla_50_x4.png",
+        "z": "galeria/personaje_09_semilla_50_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/2/715.png",
+      "nn_cnn_volteada": false,
+      "nn_cnn_cos": 0.8508,
+      "nn_pixel_ruta": "data/tinyhero/data/2/845.png",
+      "nn_pixel_volteada": true,
+      "nn_pixel_l2": 30.957,
+      "frac_reales_con_vecino_mas_cercano": 0.9912,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.9232,
+      "max_cos_con_otro_personaje": 0.8449
+    },
+    {
+      "n": 10,
+      "semilla": 54,
+      "nombre": "Ysolde Rosalba",
+      "clase": "Alquimista",
+      "archivos": {
+        "png": "galeria/personaje_10_semilla_54.png",
+        "png_x4": "galeria/personaje_10_semilla_54_x4.png",
+        "z": "galeria/personaje_10_semilla_54_z.npy"
+      },
+      "nn_cnn_ruta": "data/tinyhero/data/2/858.png",
+      "nn_cnn_volteada": false,
+      "nn_cnn_cos": 0.8919,
+      "nn_pixel_ruta": "data/tinyhero/data/2/595.png",
+      "nn_pixel_volteada": false,
+      "nn_pixel_l2": 32.271,
+      "frac_reales_con_vecino_mas_cercano": 0.9224,
+      "frac_reales_con_vecino_mas_cercano_l2": 0.9433,
+      "max_cos_con_otro_personaje": 0.8517
+    }
+  ]
+}
